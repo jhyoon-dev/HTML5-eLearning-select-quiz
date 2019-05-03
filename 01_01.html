@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta charset="UTF-8">
+	<!--<meta name="viewport" content="user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, width=device-width">-->
+	<title> </title>
+    <link href="./css/common.css" rel="stylesheet"/>
+    <script src="./js/jquery-3.1.1.min.js"></script>
+    <script src="./js/contents_mode.js"></script>
+    <script src="./js/contents_data.js"></script>
+    <script src="./js/contents_ui.js"></script>
+	<script src="./js/script.js"></script>
+	<script src="./js/common.js"></script>
+	<script>
+		var endType = 'interactiveEnd';
+		var mediaFixed = videoDir + 'quiz_start.mp4';
+		var $media;
+		var isReset = false; // 중복 초기화 방지
+		var show_btn_timing = 11; // 간지 스킵 버튼이 나올 타이밍
+		var totalQ = 3; // 문항 갯수
+		var __CHANCE = 2; // 기회 상수
+		var userChance = __CHANCE; // 사용자 기회
+		var isCorrect = []; // 정답 여부 배열
+		var setList = []; // 출제된 문제 번호
+		var setPage = []; // 화면 변환 함수 배열
+		var ans_num = []; // 정답변수
+		var incorrectArr = []; // 다시 풀어야 하는 문제 번호
+		var $quiz = []; // 퀴즈
+		var $review = [];
+
+		function loadSuccess(){
+			addQuizTemplate(totalQ);
+			setQuiz(totalQ, true); // 출제 문항 수, 랜덤 출제 여부
+            $media = $('#mainMedia');
+			$retest = $('.btnRetest');
+			// ------------ 퀴즈 간지 추가
+			start_interval = setInterval(start_interval, 30);
+			$('#quiz_start').click(function(){
+				isReset = false;
+				playSE('click');
+				media.currentTime = media.duration - 0.5;
+				$('#quiz_start').hide();
+				$('.content_video').hide();
+				$('.content_html').show();
+			});
+
+			for(var i = 0; i < totalQ; i++){
+				(function(curI){
+					$quiz[curI].find('.btnCheck').click(function(){ // 정답 체크
+						ansChk(curI);
+					});
+
+					setPage.push(function(){ // 문항별 선택지 이벤트 세팅
+						page_visible(curI);
+						
+						for (var j = 1; j <= quizList[setList[curI]].select.length; j++) {
+							var $targetSel = $quiz[curI].find('.sel' + j);
+
+							$targetSel.click(function(){
+								playSE('click');
+								$quiz[curI].find('.select').removeClass('click');
+								$(this).addClass('click');
+								$quiz[curI].find('.btnCheck').fadeIn();
+							});
+						}
+					});
+				}(i));
+			}
+			setPage.push(function(){ // 결과화면 보기
+				var correctNumber = 0;
+				endBubble();
+				
+				for (var i = 1; i <= totalQ; i++){ // 결과 OX 표시
+					var $tmp = $('.qResultView' + i);
+					if( isCorrect[i-1] ){
+						correctNumber++;
+						$tmp.html('<img src="' + imgDir + 'q_result_o.png"/>');
+					} else {
+						$tmp.html('<img src="' + imgDir + 'q_result_x.png"/>');
+					}
+				}
+				
+				if(correctNumber < totalQ){ // 다시 풀기 / 틀린 문제 다시풀기 분기처리
+					$retest.unbind('click');
+					$retest.on('click', function(){
+						playSE('click');
+						quiz_reset(incorrectArr);
+						wrongInit();
+					});
+					$retest.addClass('incorrect');
+				}else{
+					$retest.unbind('click');
+					$retest.on('click', function(){
+						playSE('click');
+						quiz_reset();
+						Init();
+					});
+					$retest.removeClass('incorrect');
+				}
+
+				$('.quiz_wrap, .review_wrap').hide();
+				$('.result_wrap').show();
+				$('.totalQNum').html(totalQ);
+				$('.correctQNum').html(correctNumber);
+				$('.resultTable td').width( $('.resultTable').width() / totalQ );
+			});
+
+			$('.viewCon').click(function(){ // 관련학습 보기
+				playSE('click');
+				call_imagePopup($(this).attr('data-image'));
+			});
+
+			$('.btnReview').on('click', function(){ // 정답 및 해설보기
+				playSE('click');
+				$('.review_wrap').show();
+				for(var i = 0; i < totalQ; i++){
+					(function(curI){
+						var $target = $quiz[curI].find('.btnNext');
+						$target.addClass('result').show().unbind('click');
+						$target.on('click', function(){ // 정답 체크
+							playSE('click');
+							setPage[setPage.length - 1]();
+						});
+						$review[curI].click(function(){
+							playSE('click');
+							$('.quiz_wrap').hide();
+							$quiz[curI].show();
+							$('.review').removeClass('on');
+							$(this).addClass('on');
+						});
+					}(i));
+				}
+				$('.review').removeClass('on');
+				$('#review1').addClass('on');
+				$('.review_wrap').addClass('review_mode');
+				$('.result_wrap').hide();
+				$quiz[0].show();
+			});
+        }
+		// ------------ 퀴즈 간지 추가
+		
+		function addQuizTemplate(quizLength){
+			for(var i = 1; i <= quizLength; i++){
+				var quizTemplate = '';
+					quizTemplate += '<div class="quiz_wrap q' + i + '">'; 
+					quizTemplate += 	'<div class="pageQ_text">';
+					quizTemplate += 		'<div class="qNum"><p>Q' + i + '</p></div>';
+					quizTemplate += 		'<div class="display_correct"></div>';
+					quizTemplate += 		'<p class="question"><!--문항--></p>';
+					quizTemplate += 	'</div>';
+					quizTemplate += 	'<div class="pageQ_sub"><!-- 보기 -->	</div>';
+					quizTemplate += 	'<div class="page">';
+					quizTemplate += 		'<div class="select sel1"><div class="ball"><span class="ans"></span><span class="check"></span>1</div><p><!-- 선택지1 --></p></div>';
+					quizTemplate += 		'<div class="select sel2"><div class="ball"><span class="ans"></span><span class="check"></span>2</div><p><!-- 선택지2 --></p></div>';
+					quizTemplate += 		'<div class="select sel3"><div class="ball"><span class="ans"></span><span class="check"></span>3</div><p><!-- 선택지3 --></p></div>';
+					quizTemplate += 		'<div class="select sel4"><div class="ball"><span class="ans"></span><span class="check"></span>4</div><p><!-- 선택지4 --></p></div>';
+					quizTemplate += 	'</div>';
+					quizTemplate += 	'<div class="btns">';
+					quizTemplate += 		'<!--<div class="viewCon" data-image=""></div>-->';
+					quizTemplate += 		'<div class="btnCheck"></div>';
+					quizTemplate += 		'<div class="btnNext"></div>';
+					quizTemplate += 	'</div>';
+					quizTemplate += 	'<div class="explain_wrap">';
+					quizTemplate += 		'<div class="answer_area"><div class="label_answer">정답</div><div class="answer"></div></div> <!-- 정답표시 안건드려도 됨 -->';
+					quizTemplate += 		'<div class="explain_area"><div class="explain"><p><!-- 해설 --></p></div></div>';
+					quizTemplate += 	'</div>';
+					quizTemplate += '</div>';
+				$('.content_html').append(quizTemplate);
+				$quiz.push($('.quiz_wrap.q' + i));
+				$('.review_wrap').append('<div id="review' + i + '" class="review"><div class="review_ball">Q' + i + '</div><div class="re_correct"></div></div>');
+				$review.push($('#review' + i));
+				$('.resultTable .labelRow').append('<td class="qResultLabel' + i + '">Q' + i + '</td>');
+				$('.resultTable .viewRow').append('<td class="qResultView' + i + '"></td>');
+			}
+		}
+
+		function start_interval(){
+			if(media.currentTime < media.duration - 1 && media.currentTime > 0.05){
+				if(!isReset){
+					isReset = true;
+					quiz_reset();
+					Init();
+					$('.content_html').hide();
+					$('.content_video').show();
+				}
+			}
+			if(media.currentTime >= show_btn_timing && $media.css('display') != 'none'){
+				$('#quiz_start').fadeIn(200);
+			}else{
+				$('#quiz_start').hide();
+			}
+		}
+
+		var wrongInit = function(){ // 틀린문제 다시풀기
+			for(var i = 0; i < incorrectArr.length; i++){
+				var $target = $quiz[incorrectArr[i]].find('.btnNext');
+				$target.unbind('click');
+				if(i == incorrectArr.length - 1){
+					$target.addClass('result').on('click', function(){
+						playSE('click');
+						setPage[setPage.length - 1]();
+					});
+				}else{
+					(function(cur, next){
+						$quiz[cur].find('.btnNext').on('click', function(){
+							playSE('click');
+							setPage[next]();
+						});
+					}(incorrectArr[i], incorrectArr[i+1]));
+				}
+			}
+			$('.select').unbind('click');
+			setPage[incorrectArr[0]]();
+			$('.review_wrap').show();
+			incorrectArr = [];
+		}
+
+		var Init = function(){ // 다시풀기
+			for(var i = 0; i < totalQ; i++){
+				(function(curI){
+					$quiz[curI].find('.btnNext').unbind('click');
+					$quiz[curI].find('.btnNext').on('click', function(){
+						playSE('click');
+						setPage[curI + 1]();
+					});
+				}(i));
+				if(i + 1 == totalQ){
+					$quiz[i].find('.btnNext').addClass('result');
+				}
+			}
+			$('.select').unbind('click');
+			setPage[0]();
+			$('.review_wrap').show();
+			incorrectArr = [];
+		}
+	</script>
+</head>
+<body>
+	<div class="loading_wrap"><span class="loading"></span></div>
+	<div id="content_wrap">
+		<div id="content">
+
+			<section class="content_html quiz">
+				<div class="review_wrap">
+					<!-- 리뷰 -->
+				</div>
+
+				<!-- 문항 추가 -->
+							
+				<div class="result_wrap">
+					<div class="resultStr">총 <p class="totalQNum"></p>문제중 <span class="correctQNum"></span>문제를 맞히셨습니다.</div>
+
+					<table class="resultTable">
+						<tr class="labelRow"></tr>
+						<tr class="viewRow"></tr>
+					</table>
+
+					<div class="btns">
+						<div class="btnRetest"></div>
+						<div class="btnReview"></div>
+					</div>
+				</div>
+			</section>
+
+			<!-- /////////////////// 공통부분 //////////////////-->
+            <div class="content_video">
+				<video id="mainMedia" preload="metadata"></video>
+				<div id="quiz_start"></div>
+			</div>
+
+			<footer class="controls"></footer>
+		    <!-- ///////////////// 공통부분 끝 /////////////////-->
+		</div>
+	</div>
+</body>
+</html>
